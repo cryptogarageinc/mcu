@@ -68,7 +68,7 @@ def double_hash(x):
 def derive_keys(x):
     h = double_hash(x)
     h = sha512(h)
-    return (h[:len(h)/2],h[len(h)/2:])
+    return (h[:len(h)//2],h[len(h)//2:])
 
 # ----------------------------------------------------------------------------------
 # HID
