@@ -2,7 +2,7 @@
 
  The MIT License (MIT)
 
- Copyright (c) 2015-2018 Douglas J. Bakkum
+ Copyright (c) 2015-2019 Douglas J. Bakkum, Shift Cryptosecurity
 
  Permission is hereby granted, free of charge, to any person obtaining
  a copy of this software and associated documentation files (the "Software"),
@@ -158,6 +158,18 @@ X(__FORCE__)      \
 X(NUM)             /* keep last */
 
 
+// Types of touch
+#define TOUCH_TYPE_TABLE \
+X(LONG_PW)               /* LONG_XXXX: brief touch 'reject'; hold 3s 'accept' */\
+X(LONG_SIGN)             \
+X(LONG_WARN)             \
+X(LONG_BOOT)             \
+X(LONG_PAIR)             \
+X(REQUIRE_LONG_TOUCH)    /* placeholder - do not move                */\
+X(TIMEOUT)               /* any touch 'accept'; 3s timeout 'reject'  */\
+X(SHORT)                 /* brief touch 'accept'; hold 3s 'reject'   */\
+X(REQUIRE_TOUCH)         /* placeholder - do not move                */
+
 // Status and error flags
 #define FLAG_TABLE \
 X(OK,                    0, 0)\
@@ -166,11 +178,6 @@ X(ERROR_MEM,             0, 0)\
 X(TOUCHED,               0, 0)\
 X(NOT_TOUCHED,           0, 0)\
 X(TOUCHED_ABORT,         0, 0)\
-X(TOUCH_SHORT,           0, 0) /* brief touch accept; hold 3s reject       */\
-X(TOUCH_LONG,            0, 0) /* brief touch reject; hold 3s accept (led) */\
-X(TOUCH_LONG_BLINK,      0, 0) /* brief touch reject; hold 3s accept (led) */\
-X(TOUCH_TIMEOUT,         0, 0) /* touch accept; 3s timeout reject          */\
-X(TOUCH_REJECT_TIMEOUT,  0, 0) /* touch reject; 3s timeout accept          */\
 X(KEY_PRESENT,           0, 0)\
 X(KEY_ABSENT,            0, 0)\
 X(RESET,                 0, 0)\
@@ -202,6 +209,7 @@ X(ERR_IO_RESET,        110, "Too many failed access attempts. Device reset.")\
 X(ERR_IO_LOCKED,       111, "Device locked. Erase device to access this command.")\
 X(ERR_IO_PW_COLLIDE,   112, "Device password matches reset password. Disabling reset password.")\
 X(ERR_IO_TOUCH_BUTTON, 113, "Due to many login attempts, the next login requires holding the touch button for 3 seconds.")\
+X(ERR_IO_CMD_ORDER,    114, "Invalid command order.")\
 X(ERR_SEED_SD,         200, "Seed creation requires an SD card for automatic encrypted backup of the seed.")\
 X(ERR_SEED_SD_NUM,     201, "Too many backup files. Please remove one from the SD card.")\
 X(ERR_SEED_MEM,        202, "Could not allocate memory for seed.")\
@@ -254,6 +262,10 @@ enum CMD_ENUM { CMD_TABLE };
 
 #define X(a) ATTR_ ## a,
 enum CMD_ATTR_ENUM { ATTR_TABLE };
+#undef X
+
+#define X(a) TOUCH_ ## a,
+enum TOUCH_TYPE_ENUM { TOUCH_TYPE_TABLE };
 #undef X
 
 #define X(a, b, c) DBB_ ## a,

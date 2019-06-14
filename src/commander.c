@@ -2,7 +2,7 @@
 
  The MIT License (MIT)
 
- Copyright (c) 2015-2018 Douglas J. Bakkum
+ Copyright (c) 2015-2019 Douglas J. Bakkum, Shift Cryptosecurity
 
  Permission is hereby granted, free of charge, to any person obtaining
  a copy of this software and associated documentation files (the "Software"),
@@ -91,7 +91,7 @@ void commander_fill_report(const char *cmd, const char *msg, int flag)
     char *p = json_report;
 
     if (!strlens(json_report)) {
-        strncat(json_report, "{", 1);
+        strcat(json_report, "{");
     } else {
         json_report[strlens(json_report) - 1] = ','; // replace closing '}' with continuing ','
     }
@@ -162,7 +162,7 @@ int commander_fill_json_array(const char **key, const char **value, int *type, i
 
     // add element to array
     if (!strlens(json_array)) {
-        strncat(json_array, "[", 1);
+        strcat(json_array, "[");
     } else {
         json_array[strlens(json_array) - 1] = ','; // replace closing ']' with continuing ','
     }
@@ -424,7 +424,7 @@ static void commander_process_backup(yajl_val json_node)
 
     if (strlens(erase)) {
         // Erase single file
-        int status = touch_button_press(DBB_TOUCH_LONG);
+        int status = touch_button_press(TOUCH_LONG_WARN);
         if (status == DBB_TOUCHED) {
             sd_erase(CMD_backup, erase);
         } else {
@@ -660,9 +660,8 @@ static int commander_check_change_keypath(yajl_val data, yajl_val checkpub)
 {
     // Check that all UTXOs use the same BIP44 prefix and depth
     size_t i;
-    uint32_t depth = 0;
-    uint32_t keypath_utxo_0[BIP44_KEYPATH_ADDRESS_DEPTH] = {0};
-    uint32_t keypath_utxo_i[BIP44_KEYPATH_ADDRESS_DEPTH] = {0};
+    uint32_t keypath_utxo_0[MAX_PARSE_KEYPATH_LEVEL] = {0};
+    uint32_t keypath_depth_0 = 0;
     for (i = 0; i < data->u.array.len; i++) {
         const char *keypath_path[] = { cmd_str(CMD_keypath), NULL };
         yajl_val obj = data->u.array.values[i];
@@ -674,31 +673,33 @@ static int commander_check_change_keypath(yajl_val data, yajl_val checkpub)
         }
 
         if (i == 0) {
-            if (wallet_parse_bip44_keypath(NULL, keypath_utxo_0, &depth, keypath, NULL,
+            if (wallet_parse_bip44_keypath(NULL, keypath_utxo_0, &keypath_depth_0, keypath, NULL,
                                            NULL) != DBB_OK) {
                 commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_KEYPATH);
                 return DBB_ERROR;
             }
         } else {
-            if (wallet_parse_bip44_keypath(NULL, keypath_utxo_i, &depth, keypath, NULL,
+            uint32_t keypath_utxo_i[MAX_PARSE_KEYPATH_LEVEL] = {0};
+            uint32_t keypath_depth_i = 0;
+            if (wallet_parse_bip44_keypath(NULL, keypath_utxo_i, &keypath_depth_i, keypath, NULL,
                                            NULL) != DBB_OK) {
                 commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_KEYPATH);
                 return DBB_ERROR;
             }
-            if (wallet_check_bip44_keypath_prefix(keypath_utxo_0, keypath_utxo_i) != DBB_OK) {
+            if (keypath_depth_0 != keypath_depth_i) {
                 commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_KEYPATH);
                 return DBB_ERROR;
             }
-        }
+            if (wallet_check_keypath_prefix(keypath_utxo_0, keypath_utxo_i,
+                                            keypath_depth_0) != DBB_OK) {
+                commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_KEYPATH);
+                return DBB_ERROR;
+            }
 
-        if (depth != BIP44_KEYPATH_ADDRESS_DEPTH) {
-            commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_KEYPATH);
-            return DBB_ERROR;
         }
     }
 
-    // Check that change addresses correspond to the UTXO prefix and BIP44 depth
-    uint32_t keypath_change[BIP44_KEYPATH_ADDRESS_DEPTH] = {0};
+    // Check that all change addresses have the same prefix as all the inputs up to the depth minus two
     for (i = 0; i < checkpub->u.array.len; i++) {
         const char *keypath_path[] = { cmd_str(CMD_keypath), NULL };
         yajl_val obj = checkpub->u.array.values[i];
@@ -709,18 +710,20 @@ static int commander_check_change_keypath(yajl_val data, yajl_val checkpub)
             return DBB_ERROR;
         }
 
-        if (wallet_parse_bip44_keypath(NULL, keypath_change, &depth, keypath, NULL,
+        uint32_t keypath_change[MAX_PARSE_KEYPATH_LEVEL] = {0};
+        uint32_t change_depth = 0;
+        if (wallet_parse_bip44_keypath(NULL, keypath_change, &change_depth, keypath, NULL,
                                        NULL) != DBB_OK) {
             commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_KEYPATH);
             return DBB_ERROR;
         }
 
-        if (depth != BIP44_KEYPATH_ADDRESS_DEPTH) {
+        if (keypath_depth_0 != change_depth) {
             commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_CHANGE);
             return DBB_ERROR;
         }
 
-        if (wallet_check_bip44_change_keypath(keypath_utxo_0, keypath_change) != DBB_OK) {
+        if (wallet_check_change_keypath(keypath_utxo_0, keypath_change, change_depth) != DBB_OK) {
             commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_SIGN_CHANGE);
             return DBB_ERROR;
         }
@@ -894,7 +897,7 @@ static void commander_process_device(yajl_val json_node)
 
     if (STREQ(value, attr_str(ATTR_lock))) {
         if (wallet_seeded() == DBB_OK) {
-            int status = touch_button_press(DBB_TOUCH_LONG);
+            int status = touch_button_press(TOUCH_LONG_WARN);
             if (status == DBB_TOUCHED) {
                 char msg[256];
                 memory_write_unlocked(0);
@@ -1026,7 +1029,7 @@ static void commander_process_led(yajl_val json_node)
     }
 
     if (STREQ(value, attr_str(ATTR_blink))) {
-        led_abort();
+        led_wink();
         commander_fill_report(cmd_str(CMD_led), attr_str(ATTR_success), DBB_OK);
     } else {
         commander_fill_report(cmd_str(CMD_led), NULL, DBB_ERR_IO_INVALID_CMD);
@@ -1444,9 +1447,15 @@ static int commander_echo_command(yajl_val json_node)
         commander_fill_report(cmd_str(CMD_checkpub), json_array, DBB_JSON_ARRAY);
     }
 
-    snprintf(json_array, COMMANDER_ARRAY_MAX, "%s", json_report);
-    memset(json_report, 0, COMMANDER_REPORT_SIZE);
-    commander_fill_report(cmd_str(CMD_sign), json_array, DBB_JSON_ARRAY);
+    int ret = snprintf(json_array, COMMANDER_ARRAY_MAX, "%s", json_report);
+    if (ret >= COMMANDER_ARRAY_MAX || ret < 0) {
+        commander_clear_report();
+        commander_fill_report(cmd_str(CMD_sign), NULL, DBB_ERR_IO_REPORT_BUF);
+        return DBB_ERROR;
+    } else {
+        memset(json_report, 0, COMMANDER_REPORT_SIZE);
+        commander_fill_report(cmd_str(CMD_sign), json_array, DBB_JSON_ARRAY);
+    }
 
     uint8_t disable_pairing = 1;
     for (size_t i = 0; i < data->u.array.len; i++) {
@@ -1486,11 +1495,16 @@ static int commander_touch_button(int found_cmd)
     if ((found_cmd == CMD_seed || found_cmd == CMD_reset) && wallet_seeded() != DBB_OK) {
         // Do not require touch if not yet seeded
         return DBB_OK;
+    } else if ((found_cmd == CMD_seed || found_cmd == CMD_reset) &&
+               wallet_seeded() == DBB_OK) {
+        return touch_button_press(TOUCH_LONG_WARN);
     } else if (found_cmd == CMD_bootloader && commander_bootloader_unlocked()) {
         // Do not require touch to relock bootloader
         return DBB_OK;
-    } else if (found_cmd < CMD_REQUIRE_TOUCH) {
-        return touch_button_press(DBB_TOUCH_LONG);
+    } else if (found_cmd == CMD_password || found_cmd == CMD_hidden_password) {
+        return touch_button_press(TOUCH_LONG_PW);
+    } else if (found_cmd == CMD_bootloader) {
+        return touch_button_press(TOUCH_LONG_BOOT);
     } else {
         return DBB_OK;
     }
@@ -1560,7 +1574,7 @@ static void commander_parse(char *command)
                     memset(TFA_PIN, 0, sizeof(TFA_PIN));
                 }
             }
-            status = touch_button_press(DBB_TOUCH_LONG_BLINK);
+            status = touch_button_press(TOUCH_LONG_SIGN);
             if (status == DBB_TOUCHED) {
                 yajl_tree_free(json_node);
                 json_node = yajl_tree_parse(sign_command, NULL, 0);
@@ -1759,7 +1773,7 @@ static int commander_check_init(const char *encrypted_command)
     }
 
     if (memory_report_access_err_count() >= COMMANDER_TOUCH_ATTEMPTS) {
-        if (touch_button_press(DBB_TOUCH_LONG) != DBB_TOUCHED) {
+        if (touch_button_press(TOUCH_LONG_PW) != DBB_TOUCHED) {
             commander_fill_report(cmd_str(CMD_input), NULL, DBB_ERR_IO_TOUCH_BUTTON);
             return DBB_ERROR;
         }
